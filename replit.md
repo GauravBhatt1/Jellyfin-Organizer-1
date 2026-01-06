@@ -41,6 +41,11 @@ Preferred communication style: Simple, everyday language.
 2. **Filename Parser** (`server/lib/filename-parser.ts`): Pattern matching to extract title, year, season/episode from filenames
 3. **TMDB Integration** (`server/lib/tmdb.ts`): Fetches metadata, posters, and episode information
 4. **Organizer** (`server/lib/organizer.ts`): Copies or moves files to destination folders with proper naming
+5. **Duplicate Detection**: Uses multi-criteria matching:
+   - **Identity Check**: (same TMDB ID + episode) OR (normalized name + year/episode)
+   - **Similarity Check**: (string similarity > 0.90) OR (duration within ±2s) OR (file size < 5%)
+   - Both checks must pass to flag as duplicate
+6. **Manual Override**: Items with manualOverride=true maintain locked metadata during rescans
 
 ### Project Structure
 ```
