@@ -28,7 +28,7 @@ export default function Settings() {
     sourceFolders: [],
     moviesDestination: "",
     tvShowsDestination: "",
-    copyMode: true,
+    copyMode: false,
     autoOrganize: false,
   });
   const [newFolder, setNewFolder] = useState("");
@@ -44,7 +44,7 @@ export default function Settings() {
         sourceFolders: settings.sourceFolders || [],
         moviesDestination: settings.moviesDestination || "",
         tvShowsDestination: settings.tvShowsDestination || "",
-        copyMode: settings.copyMode ?? true,
+        copyMode: settings.copyMode ?? false,
         autoOrganize: settings.autoOrganize ?? false,
       });
     }
@@ -236,14 +236,14 @@ export default function Settings() {
               <CardContent className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
-                    <Label htmlFor="copyMode">Copy Mode</Label>
+                    <Label htmlFor="copyMode">Copy Mode (OFF = Move)</Label>
                     <p className="text-sm text-muted-foreground">
-                      Copy files instead of moving them (safer)
+                      OFF: Move files (delete from source) | ON: Copy files (keep original)
                     </p>
                   </div>
                   <Switch
                     id="copyMode"
-                    checked={formData.copyMode ?? true}
+                    checked={formData.copyMode ?? false}
                     onCheckedChange={(checked) => setFormData({ ...formData, copyMode: checked })}
                     data-testid="switch-copy-mode"
                   />
