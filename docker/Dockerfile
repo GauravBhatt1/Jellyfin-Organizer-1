@@ -5,11 +5,11 @@ WORKDIR /app
 # Install ffprobe for duration detection
 RUN apk add --no-cache ffmpeg
 
-# Install all dependencies (including dev for build)
+# Copy package files and install ALL dependencies (dev + prod)
 COPY package*.json ./
 RUN npm ci
 
-# Copy source
+# Copy source code
 COPY . .
 
 # Build the application
@@ -20,15 +20,18 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install ffprobe
+# Install ffprobe runtime dependency
 RUN apk add --no-cache ffmpeg
 
-# Copy built files and production dependencies
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package*.json ./
-RUN npm ci --only=production
+# Copy package files
+COPY package*.json ./
 
-# Expose port
+# Install production dependencies only
+RUN npm ci --omit=dev
+
+# Copy built application from builder
+COPY --from=builder /app/dist ./dist
+
 EXPOSE 5000
 
 ENV NODE_ENV=production
