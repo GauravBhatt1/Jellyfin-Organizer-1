@@ -54,6 +54,11 @@ export function FolderPickerDialog({
 
   const { data: files, isLoading: filesLoading, error } = useQuery<FilesystemResponse>({
     queryKey: ["/api/filesystem", currentPath],
+    queryFn: async () => {
+      const res = await fetch(`/api/filesystem?path=${encodeURIComponent(currentPath!)}`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
     enabled: open && currentPath !== null,
   });
 
