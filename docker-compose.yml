@@ -12,10 +12,17 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:-change-this-secret-key}
       - NODE_ENV=production
     volumes:
+      # Mount your VPS directories here - add/remove as needed
+      - /:/host:ro  # Read-only root for browsing
       - /mnt:/mnt
       - /media:/media
       - /home:/home
       - /data:/data
+      - /opt:/opt
+      - /srv:/srv
+      - /storage:/storage
+      # Add your custom media paths below:
+      # - /path/to/your/media:/path/to/your/media
     depends_on:
       db:
         condition: service_healthy

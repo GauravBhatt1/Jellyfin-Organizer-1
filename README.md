@@ -53,28 +53,53 @@ npm run dev
 
 The application will be available at `http://localhost:5000`
 
-## Docker Deployment
+## Docker Deployment (VPS with Portainer)
 
 ### Using Docker Compose
 
-1. Configure your media paths in `docker-compose.yml`:
-```yaml
-volumes:
-  - /path/to/your/media:/media:ro
-  - /path/to/organized:/organized
+1. Clone the repository on your VPS:
+```bash
+cd ~
+git clone https://github.com/GauravBhatt1/Jellyfin-Organizer-1.git
+cd Jellyfin-Organizer-1
 ```
 
-2. Set environment variables:
+2. Configure your media paths in `docker-compose.yml`:
+```yaml
+volumes:
+  # These paths are already configured:
+  - /:/host:ro           # Browse entire VPS filesystem (read-only)
+  - /mnt:/mnt            # Common mount point
+  - /media:/media        # Media folder
+  - /home:/home          # Home directories
+  - /data:/data          # Data folder
+  
+  # Add your custom paths:
+  - /path/to/your/media:/path/to/your/media
+```
+
+**Important**: The paths on the LEFT side must exist on your VPS. The folder browser will show these mounted directories.
+
+3. Set environment variables (optional):
 ```bash
 export SESSION_SECRET="your-production-secret"
 ```
 
-3. Build and start:
+4. Build and start:
 ```bash
+docker-compose build --no-cache
 docker-compose up -d
 ```
 
-The application will be available at `http://localhost:5000`
+The application will be available at `http://your-vps-ip:5000`
+
+### Folder Access
+
+When you click the + button to add folders in Settings, you'll see the directories that are mounted in `docker-compose.yml`. To access your media files:
+
+1. **Option 1**: Use the pre-mounted paths (`/mnt`, `/media`, `/home`, `/data`)
+2. **Option 2**: Browse via `/host` which shows your entire VPS filesystem (read-only)
+3. **Option 3**: Add custom volume mounts in `docker-compose.yml` for your specific folders
 
 ## Configuration
 

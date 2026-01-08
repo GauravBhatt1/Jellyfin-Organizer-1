@@ -10,7 +10,7 @@ import type { WSMessage } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
 
-const ALLOWED_ROOTS = ["/", "/mnt", "/media", "/home", "/data", "/opt", "/srv", "/storage", "/nas", "/volume1", "/shares"];
+const ALLOWED_ROOTS = ["/", "/host", "/mnt", "/media", "/home", "/data", "/opt", "/srv", "/storage", "/nas", "/volume1", "/shares"];
 
 function isPathAllowed(targetPath: string): boolean {
   const normalized = path.resolve(targetPath);
