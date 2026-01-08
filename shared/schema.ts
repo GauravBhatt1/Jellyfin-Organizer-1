@@ -51,6 +51,8 @@ export const settings = pgTable("settings", {
   sourceFolders: text("source_folders").array().default(sql`'{}'::text[]`),
   moviesDestination: text("movies_destination"),
   tvShowsDestination: text("tv_shows_destination"),
+  moviesDestinations: text("movies_destinations").array().default(sql`'{}'::text[]`),
+  tvShowsDestinations: text("tv_shows_destinations").array().default(sql`'{}'::text[]`),
   copyMode: boolean("copy_mode").default(false).notNull(),
   autoOrganize: boolean("auto_organize").default(false).notNull(),
 });

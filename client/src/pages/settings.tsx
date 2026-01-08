@@ -8,9 +8,9 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { FolderPickerDialog } from "@/components/folder-picker-dialog";
 import type { Settings as SettingsType } from "@shared/schema";
 import { 
-  Settings as SettingsIcon, 
   FolderOpen, 
   Plus, 
   X, 
@@ -18,7 +18,9 @@ import {
   Save,
   Key,
   HardDrive,
-  Cog
+  Cog,
+  Film,
+  Tv
 } from "lucide-react";
 
 export default function Settings() {
@@ -26,12 +28,14 @@ export default function Settings() {
   const [formData, setFormData] = useState<Partial<SettingsType>>({
     tmdbApiKey: "",
     sourceFolders: [],
-    moviesDestination: "",
-    tvShowsDestination: "",
+    moviesDestinations: [],
+    tvShowsDestinations: [],
     copyMode: false,
     autoOrganize: false,
   });
-  const [newFolder, setNewFolder] = useState("");
+  
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<"source" | "movies" | "tvshows">("source");
 
   const { data: settings, isLoading } = useQuery<SettingsType>({
     queryKey: ["/api/settings"],
@@ -42,8 +46,8 @@ export default function Settings() {
       setFormData({
         tmdbApiKey: settings.tmdbApiKey || "",
         sourceFolders: settings.sourceFolders || [],
-        moviesDestination: settings.moviesDestination || "",
-        tvShowsDestination: settings.tvShowsDestination || "",
+        moviesDestinations: settings.moviesDestinations || (settings.moviesDestination ? [settings.moviesDestination] : []),
+        tvShowsDestinations: settings.tvShowsDestinations || (settings.tvShowsDestination ? [settings.tvShowsDestination] : []),
         copyMode: settings.copyMode ?? false,
         autoOrganize: settings.autoOrganize ?? false,
       });
@@ -58,30 +62,67 @@ export default function Settings() {
       queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
       toast({ title: "Settings saved", description: "Your settings have been updated." });
     },
-    onError: (error) => {
+    onError: () => {
       toast({ title: "Error", description: "Failed to save settings.", variant: "destructive" });
     },
   });
 
-  const handleAddFolder = () => {
-    if (newFolder.trim() && !formData.sourceFolders?.includes(newFolder.trim())) {
-      setFormData({
-        ...formData,
-        sourceFolders: [...(formData.sourceFolders || []), newFolder.trim()],
-      });
-      setNewFolder("");
+  const openPicker = (target: "source" | "movies" | "tvshows") => {
+    setPickerTarget(target);
+    setPickerOpen(true);
+  };
+
+  const handleFolderSelect = (path: string) => {
+    if (pickerTarget === "source") {
+      if (!formData.sourceFolders?.includes(path)) {
+        setFormData({
+          ...formData,
+          sourceFolders: [...(formData.sourceFolders || []), path],
+        });
+      }
+    } else if (pickerTarget === "movies") {
+      if (!formData.moviesDestinations?.includes(path)) {
+        setFormData({
+          ...formData,
+          moviesDestinations: [...(formData.moviesDestinations || []), path],
+        });
+      }
+    } else if (pickerTarget === "tvshows") {
+      if (!formData.tvShowsDestinations?.includes(path)) {
+        setFormData({
+          ...formData,
+          tvShowsDestinations: [...(formData.tvShowsDestinations || []), path],
+        });
+      }
     }
   };
 
-  const handleRemoveFolder = (index: number) => {
+  const removeSourceFolder = (index: number) => {
     const updated = [...(formData.sourceFolders || [])];
     updated.splice(index, 1);
     setFormData({ ...formData, sourceFolders: updated });
   };
 
+  const removeMoviesDestination = (index: number) => {
+    const updated = [...(formData.moviesDestinations || [])];
+    updated.splice(index, 1);
+    setFormData({ ...formData, moviesDestinations: updated });
+  };
+
+  const removeTvShowsDestination = (index: number) => {
+    const updated = [...(formData.tvShowsDestinations || [])];
+    updated.splice(index, 1);
+    setFormData({ ...formData, tvShowsDestinations: updated });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updateMutation.mutate(formData);
+    const dataToSave = {
+      ...formData,
+      moviesDestination: formData.moviesDestinations?.[0] || "",
+      tvShowsDestination: formData.tvShowsDestinations?.[0] || "",
+    };
+    updateMutation.mutate(dataToSave);
   };
 
   if (isLoading) {
@@ -141,24 +182,16 @@ export default function Settings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex gap-2">
-                  <Input
-                    value={newFolder}
-                    onChange={(e) => setNewFolder(e.target.value)}
-                    placeholder="/path/to/media"
-                    className="font-mono text-sm"
-                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddFolder())}
-                    data-testid="input-new-folder"
-                  />
-                  <Button
-                    type="button"
-                    onClick={handleAddFolder}
-                    variant="outline"
-                    data-testid="button-add-folder"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => openPicker("source")}
+                  className="gap-2"
+                  data-testid="button-browse-source"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  Browse Folders
+                </Button>
                 
                 {formData.sourceFolders && formData.sourceFolders.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
@@ -176,7 +209,7 @@ export default function Settings() {
                           size="icon"
                           variant="ghost"
                           className="h-4 w-4 ml-1"
-                          onClick={() => handleRemoveFolder(index)}
+                          onClick={() => removeSourceFolder(index)}
                           data-testid={`button-remove-folder-${index}`}
                         >
                           <X className="h-3 w-3" />
@@ -197,31 +230,104 @@ export default function Settings() {
                   Destinations
                 </CardTitle>
                 <CardDescription>
-                  Where to organize your media files
+                  Where to organize your media files (first path is primary)
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="moviesDestination">Movies Destination</Label>
-                  <Input
-                    id="moviesDestination"
-                    value={formData.moviesDestination || ""}
-                    onChange={(e) => setFormData({ ...formData, moviesDestination: e.target.value })}
-                    placeholder="/path/to/movies"
-                    className="font-mono text-sm"
-                    data-testid="input-movies-dest"
-                  />
+              <CardContent className="space-y-6">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-2">
+                      <Film className="h-4 w-4" />
+                      Movies Destinations
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openPicker("movies")}
+                      className="gap-1"
+                      data-testid="button-browse-movies"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add
+                    </Button>
+                  </div>
+                  {formData.moviesDestinations && formData.moviesDestinations.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {formData.moviesDestinations.map((dest, index) => (
+                        <Badge
+                          key={index}
+                          variant={index === 0 ? "default" : "secondary"}
+                          className="font-mono text-xs pr-1 gap-1"
+                          data-testid={`badge-movies-dest-${index}`}
+                        >
+                          <Film className="h-3 w-3" />
+                          {dest}
+                          {index === 0 && <span className="text-[10px] ml-1">(primary)</span>}
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-4 w-4 ml-1"
+                            onClick={() => removeMoviesDestination(index)}
+                            data-testid={`button-remove-movies-${index}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No movies destinations configured</p>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="tvShowsDestination">TV Shows Destination</Label>
-                  <Input
-                    id="tvShowsDestination"
-                    value={formData.tvShowsDestination || ""}
-                    onChange={(e) => setFormData({ ...formData, tvShowsDestination: e.target.value })}
-                    placeholder="/path/to/tv-shows"
-                    className="font-mono text-sm"
-                    data-testid="input-tv-dest"
-                  />
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-2">
+                      <Tv className="h-4 w-4" />
+                      TV Shows Destinations
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openPicker("tvshows")}
+                      className="gap-1"
+                      data-testid="button-browse-tvshows"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add
+                    </Button>
+                  </div>
+                  {formData.tvShowsDestinations && formData.tvShowsDestinations.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {formData.tvShowsDestinations.map((dest, index) => (
+                        <Badge
+                          key={index}
+                          variant={index === 0 ? "default" : "secondary"}
+                          className="font-mono text-xs pr-1 gap-1"
+                          data-testid={`badge-tvshows-dest-${index}`}
+                        >
+                          <Tv className="h-3 w-3" />
+                          {dest}
+                          {index === 0 && <span className="text-[10px] ml-1">(primary)</span>}
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-4 w-4 ml-1"
+                            onClick={() => removeTvShowsDestination(index)}
+                            data-testid={`button-remove-tvshows-${index}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No TV shows destinations configured</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -311,6 +417,19 @@ export default function Settings() {
           </Button>
         </div>
       </form>
+
+      <FolderPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={handleFolderSelect}
+        title={
+          pickerTarget === "source" 
+            ? "Select Source Folder" 
+            : pickerTarget === "movies" 
+            ? "Select Movies Destination" 
+            : "Select TV Shows Destination"
+        }
+      />
     </div>
   );
 }

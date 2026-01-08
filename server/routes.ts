@@ -7,6 +7,23 @@ import { startOrganize } from "./lib/organizer";
 import { runTests } from "./lib/filename-parser";
 import { insertMediaItemSchema, insertSettingsSchema } from "@shared/schema";
 import type { WSMessage } from "@shared/schema";
+import * as fs from "fs";
+import * as path from "path";
+
+const ALLOWED_ROOTS = ["/mnt", "/media", "/home", "/data", "/opt", "/srv"];
+
+function isPathAllowed(targetPath: string): boolean {
+  const normalized = path.resolve(targetPath);
+  return ALLOWED_ROOTS.some(root => normalized === root || normalized.startsWith(root + "/"));
+}
+
+function getAvailableRoots(): { name: string; path: string; exists: boolean }[] {
+  return ALLOWED_ROOTS.map(root => ({
+    name: root,
+    path: root,
+    exists: fs.existsSync(root)
+  })).filter(r => r.exists);
+}
 
 const clients = new Set<WebSocket>();
 
@@ -245,6 +262,60 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error running parser tests:", error);
       res.status(500).json({ error: "Failed to run parser tests" });
+    }
+  });
+
+  // Filesystem browsing endpoints
+  app.get("/api/filesystem/roots", async (req: Request, res: Response) => {
+    try {
+      const roots = getAvailableRoots();
+      res.json(roots);
+    } catch (error) {
+      console.error("Error getting filesystem roots:", error);
+      res.status(500).json({ error: "Failed to get filesystem roots" });
+    }
+  });
+
+  app.get("/api/filesystem", async (req: Request, res: Response) => {
+    try {
+      const targetPath = (req.query.path as string) || "/";
+      const normalized = path.resolve(targetPath);
+
+      // Check if path is in allowed roots
+      if (!isPathAllowed(normalized)) {
+        return res.status(403).json({ error: "Access denied to this path" });
+      }
+
+      // Check if path exists
+      if (!fs.existsSync(normalized)) {
+        return res.status(404).json({ error: "Path not found" });
+      }
+
+      const stats = fs.statSync(normalized);
+      if (!stats.isDirectory()) {
+        return res.status(400).json({ error: "Path is not a directory" });
+      }
+
+      // Read directory contents
+      const items = fs.readdirSync(normalized, { withFileTypes: true });
+      const folders = items
+        .filter(item => item.isDirectory() && !item.name.startsWith("."))
+        .map(item => ({
+          name: item.name,
+          path: path.join(normalized, item.name),
+          type: "directory" as const
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      res.json({
+        currentPath: normalized,
+        parentPath: path.dirname(normalized) !== normalized ? path.dirname(normalized) : null,
+        canGoUp: path.dirname(normalized) !== normalized && isPathAllowed(path.dirname(normalized)),
+        items: folders
+      });
+    } catch (error) {
+      console.error("Error browsing filesystem:", error);
+      res.status(500).json({ error: "Failed to browse filesystem" });
     }
   });
 
