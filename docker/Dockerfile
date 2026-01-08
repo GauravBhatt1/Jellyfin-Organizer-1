@@ -26,8 +26,8 @@ RUN apk add --no-cache ffmpeg
 # Copy package files
 COPY package*.json ./
 
-# Install production dependencies only
-RUN npm ci --omit=dev
+# Install all dependencies (drizzle-kit needed for migrations)
+RUN npm ci
 
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
@@ -36,4 +36,7 @@ EXPOSE 5000
 
 ENV NODE_ENV=production
 
-CMD ["node", "dist/index.cjs"]
+COPY --from=builder /app/drizzle.config.ts ./
+COPY --from=builder /app/shared ./shared
+
+CMD ["sh", "-c", "npm run db:push && node dist/index.cjs"]
