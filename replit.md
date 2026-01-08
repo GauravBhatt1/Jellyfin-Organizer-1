@@ -46,9 +46,17 @@ Preferred communication style: Simple, everyday language.
 1. **Scanner** (`server/lib/scanner.ts`): Recursively scans configured source folders for media files
    - Parses tagged folder prefixes to determine library type
    - Overrides detected content type based on library (Movies library = movie, TV library = tv_show)
-2. **Filename Parser** (`server/lib/filename-parser.ts`): Pattern matching to extract title, year, season/episode from filenames
+2. **Filename Parser** (`server/lib/parseMediaFilename.ts`): Robust pattern matching with aggressive noise removal
+   - Detects TV patterns: S02E01, S02 E01, S04 EP 01, 1x02
+   - Removes noise tokens: quality tags (1080p), codecs (x264), release groups (HDHub4u), languages (Hindi)
+   - Extracts clean series/movie names for TMDB search
+   - Example: "Fallout.S02E01.1080p.WEB-DL.Hindi.5.1-English.5.1.ESub.x264-HDHub4u.Ms.mkv" → "Fallout"
 3. **TMDB Integration** (`server/lib/tmdb.ts`): Fetches metadata, posters, and episode information
-4. **Organizer** (`server/lib/organizer.ts`): Copies or moves files to destination folders with proper naming
+4. **Organizer** (`server/lib/organizer.ts`): ALWAYS MOVES files to destination folders (destructive operation)
+   - No copy mode - files are moved, not copied
+   - Cross-device move: copy → verify → delete source
+   - Collision handling: skip duplicates or auto-rename with "(copy 2)" suffix
+   - Safety guards: blocks moves if source === destination or destination inside source
 5. **Duplicate Detection**: Uses multi-criteria matching:
    - **Identity Check**: (same TMDB ID + episode) OR (normalized name + year/episode)
    - **Similarity Check**: (string similarity > 0.90) OR (duration within ±2s) OR (file size < 5%)

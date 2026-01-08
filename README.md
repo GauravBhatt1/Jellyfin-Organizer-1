@@ -7,7 +7,7 @@ A full-stack web application for automatically organizing your media library wit
 - **Smart File Scanning**: Recursively scan directories for media files
 - **Intelligent Parsing**: Detect movies and TV shows from filenames with pattern matching
 - **TMDB Integration**: Fetch metadata, posters, and episode information
-- **Automated Organization**: Copy or move files to organized folder structures
+- **Automated Organization**: Move files to organized Jellyfin-compatible folder structures
 - **Duplicate Detection**: Identify and manage duplicate media files
 - **Real-time Progress**: WebSocket-based live updates for scan and organize jobs
 - **Confidence Scoring**: Visual indicators for files that need manual review
@@ -106,11 +106,24 @@ When you click the + button to add folders in Settings, you'll see the directori
 All configuration is done through the Settings page in the GUI:
 
 1. **TMDB API Key**: Required for fetching metadata. Get one at [TMDB](https://www.themoviedb.org/settings/api)
-2. **Source Folders**: Directories to scan for media files
+2. **Source Folders**: Directories to scan for media files (organized by library type)
 3. **Movies Destination**: Where to organize movies
 4. **TV Shows Destination**: Where to organize TV shows
-5. **Copy Mode**: Copy files (default) or move them
-6. **Auto Organize**: Automatically organize high-confidence items after scan
+5. **Auto Organize**: Automatically organize high-confidence items after scan
+
+## Important: Destructive Operation
+
+**Organize MOVES files (destructive operation).** Original files are removed from source folders after being successfully moved to their destination. There is no copy mode.
+
+Before running organize on your entire library:
+1. **Test on a small sample first** - Select a few files to verify the organization works as expected
+2. **Ensure destinations are correct** - Double-check your Movies and TV Shows destination paths
+3. **Back up important files** - The move operation is irreversible through this app
+
+The app includes safety guards:
+- Files are never overwritten at the destination (collision handling creates "(copy 2)" suffix)
+- Move operations are atomic (copy + verify + delete for cross-device moves)
+- Source files are only deleted after successful verification
 
 ## File Organization
 

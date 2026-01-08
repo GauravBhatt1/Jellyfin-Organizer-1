@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { storage } from "../storage";
-import { parseFilename, isSupportedExtension } from "./filename-parser";
+import { parseMediaFilename, isSupportedExtension } from "./parseMediaFilename";
 import { searchMovie, searchTV, getEpisodeTitle } from "./tmdb";
 import { getMediaDuration } from "./media-utils";
 import { decodeTaggedFolder, type LibraryType } from "@shared/library-utils";
@@ -382,9 +382,8 @@ async function scanDirectory(
               if (existingItem && existingItem.fileSize === fileStats.size) {
                 processedFiles++;
               } else {
-                // Parse filename
-                const parentFolder = path.basename(dir);
-                const parsed = parseFilename(entry.name, parentFolder);
+                // Parse filename with new parser
+                const parsed = parseMediaFilename(dir, entry.name);
                 
                 // Override detectedType based on library type (unless mixed)
                 let detectedType = parsed.detectedType;

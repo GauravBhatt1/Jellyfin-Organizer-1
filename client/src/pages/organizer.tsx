@@ -187,6 +187,13 @@ export default function Organizer() {
         </Button>
       </div>
 
+      <div className="flex items-center gap-3 p-3 rounded-md bg-chart-4/10 border border-chart-4/30">
+        <AlertTriangle className="h-5 w-5 text-chart-4 flex-shrink-0" />
+        <p className="text-sm text-chart-4">
+          <span className="font-medium">Warning:</span> Organize will MOVE files to their destination. Original files will be removed from source folders.
+        </p>
+      </div>
+
       {activeOrganize && (
         <ProgressCard
           title="Organizing Files"

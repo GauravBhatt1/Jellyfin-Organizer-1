@@ -28,7 +28,6 @@ export default function Settings() {
   const { toast } = useToast();
   
   const [tmdbApiKey, setTmdbApiKey] = useState("");
-  const [copyMode, setCopyMode] = useState(true);
   const [autoOrganize, setAutoOrganize] = useState(false);
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [mixedFolders, setMixedFolders] = useState<MixedFolderEntry[]>([]);
@@ -43,7 +42,6 @@ export default function Settings() {
   useEffect(() => {
     if (settings) {
       setTmdbApiKey(settings.tmdbApiKey || "");
-      setCopyMode(settings.copyMode ?? true);
       setAutoOrganize(settings.autoOrganize ?? false);
       
       const { libraries: extractedLibraries, mixedFolders: extractedMixed } = extractLibrariesFromSettings(
@@ -130,7 +128,6 @@ export default function Settings() {
     const dataToSave: Partial<SettingsType> = {
       tmdbApiKey,
       sourceFolders,
-      copyMode,
       autoOrganize,
     };
     
@@ -303,18 +300,6 @@ export default function Settings() {
         </div>
 
         <div className="space-y-4 pt-4 border-t border-border">
-          <div className="flex items-center justify-between">
-            <div>
-              <Label htmlFor="copyMode" className="text-base">Copy Mode</Label>
-              <p className="text-xs text-muted-foreground">Keep original files (recommended)</p>
-            </div>
-            <Switch
-              id="copyMode"
-              checked={copyMode}
-              onCheckedChange={setCopyMode}
-              data-testid="switch-copy-mode"
-            />
-          </div>
           <div className="flex items-center justify-between">
             <div>
               <Label htmlFor="autoOrganize" className="text-base">Auto Organize</Label>

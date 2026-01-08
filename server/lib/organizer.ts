@@ -36,11 +36,10 @@ export async function startOrganize(
   });
 
   // Run organize in background with resolved paths
-  // Default to copy mode (true) for safety - moves require explicit opt-in
+  // ALWAYS MOVE files - copy mode has been removed
   const resolvedSettings = {
     moviesDestination: moviesPath,
     tvShowsDestination: tvShowsPath,
-    copyMode: settings?.copyMode ?? true,
   };
   
   runOrganize(job.id, itemIds, resolvedSettings, broadcast).finally(() => {
@@ -74,7 +73,7 @@ function getDestinationPath(
 async function runOrganize(
   jobId: string,
   itemIds: string[],
-  settings: { moviesDestination: string | null; tvShowsDestination: string | null; copyMode: boolean },
+  settings: { moviesDestination: string | null; tvShowsDestination: string | null },
   broadcast: WSBroadcast
 ): Promise<void> {
   let processedFiles = 0;
@@ -111,46 +110,61 @@ async function runOrganize(
         const result = await organizeItem(item, settings);
         
         if (result.success) {
-          await storage.updateMediaItem(item.id, {
-            status: "organized",
-            destinationPath: result.destinationPath,
-          });
-          
-          await storage.createOrganizationLog({
-            mediaItemId: item.id,
-            action: settings.copyMode ? "copy" : "move",
-            sourcePath: path.join(item.originalPath, item.originalFilename),
-            destinationPath: result.destinationPath,
-          });
-          
-          // Update TV series or movie record
-          if (item.detectedType === "tv_show" && item.tmdbId) {
-            const existing = await storage.getTvSeriesByTmdbId(item.tmdbId);
-            if (existing) {
-              await storage.updateTvSeries(existing.id, {
-                episodeCount: existing.episodeCount + 1,
-              });
-            } else {
-              await storage.createTvSeries({
-                name: item.tmdbName || item.cleanedName || item.detectedName || "Unknown",
-                tmdbId: item.tmdbId,
-                posterPath: item.posterPath,
-                episodeCount: 1,
-              });
+          // Check if this was a skipped duplicate - status already set by handleCollision
+          if (result.skipped) {
+            // Don't overwrite status or log a move - collision handler already set status to "skipped"
+            await storage.createOrganizationLog({
+              mediaItemId: item.id,
+              action: "skip",
+              sourcePath: path.join(item.originalPath, item.originalFilename),
+              destinationPath: result.destinationPath,
+              error: "Duplicate file already exists at destination",
+            });
+            // Count as success (duplicate handled correctly)
+            successCount++;
+          } else {
+            // Actual successful move
+            await storage.updateMediaItem(item.id, {
+              status: "organized",
+              destinationPath: result.destinationPath,
+            });
+            
+            await storage.createOrganizationLog({
+              mediaItemId: item.id,
+              action: "move",
+              sourcePath: path.join(item.originalPath, item.originalFilename),
+              destinationPath: result.destinationPath,
+            });
+            
+            // Update TV series or movie record
+            if (item.detectedType === "tv_show" && item.tmdbId) {
+              const existing = await storage.getTvSeriesByTmdbId(item.tmdbId);
+              if (existing) {
+                await storage.updateTvSeries(existing.id, {
+                  episodeCount: existing.episodeCount + 1,
+                });
+              } else {
+                await storage.createTvSeries({
+                  name: item.tmdbName || item.cleanedName || item.detectedName || "Unknown",
+                  tmdbId: item.tmdbId,
+                  posterPath: item.posterPath,
+                  episodeCount: 1,
+                });
+              }
+            } else if (item.detectedType === "movie" && item.tmdbId) {
+              const existing = await storage.getMovieByTmdbId(item.tmdbId);
+              if (!existing) {
+                await storage.createMovie({
+                  name: item.tmdbName || item.cleanedName || item.detectedName || "Unknown",
+                  year: item.year,
+                  tmdbId: item.tmdbId,
+                  posterPath: item.posterPath,
+                });
+              }
             }
-          } else if (item.detectedType === "movie" && item.tmdbId) {
-            const existing = await storage.getMovieByTmdbId(item.tmdbId);
-            if (!existing) {
-              await storage.createMovie({
-                name: item.tmdbName || item.cleanedName || item.detectedName || "Unknown",
-                year: item.year,
-                tmdbId: item.tmdbId,
-                posterPath: item.posterPath,
-              });
-            }
+            
+            successCount++;
           }
-          
-          successCount++;
         } else {
           await storage.updateMediaItem(item.id, {
             status: "error",
@@ -226,8 +240,8 @@ async function runOrganize(
 
 async function organizeItem(
   item: MediaItem,
-  settings: { moviesDestination: string | null; tvShowsDestination: string | null; copyMode: boolean }
-): Promise<{ success: boolean; destinationPath?: string; error?: string }> {
+  settings: { moviesDestination: string | null; tvShowsDestination: string | null }
+): Promise<{ success: boolean; destinationPath?: string; error?: string; skipped?: boolean }> {
   const sourcePath = path.join(item.originalPath, item.originalFilename);
   
   // Check if source exists
@@ -267,8 +281,35 @@ async function organizeItem(
     return { success: false, error: "Unknown media type" };
   }
 
-  // Handle collision
-  destinationPath = await handleCollision(destinationPath, item);
+  // Safety guards: prevent moving to same location
+  const normalizedSource = path.normalize(sourcePath);
+  const normalizedDest = path.normalize(destinationPath);
+  
+  if (normalizedSource === normalizedDest) {
+    return { success: false, error: "Source and destination are the same" };
+  }
+  
+  // Prevent destination being inside the source file's parent directory tree
+  // This blocks moves where destination folder contains the source folder
+  const sourceDir = path.dirname(normalizedSource);
+  if (normalizedDest.startsWith(sourceDir + path.sep) && path.dirname(normalizedDest).startsWith(sourceDir)) {
+    // Only block if destination is literally inside the source directory
+    // (not just sharing a prefix like /media/tv vs /media/tv_shows)
+    const relPath = path.relative(sourceDir, normalizedDest);
+    if (!relPath.startsWith('..') && !path.isAbsolute(relPath)) {
+      return { success: false, error: "Destination is inside source directory" };
+    }
+  }
+
+  // Handle collision - check if file exists and handle duplicates
+  const collisionResult = await handleCollision(destinationPath, item);
+  
+  // If item was marked as skipped (duplicate with same size), don't move
+  if (collisionResult.skipped) {
+    return { success: true, destinationPath: collisionResult.path, skipped: true };
+  }
+  
+  destinationPath = collisionResult.path;
 
   // Create destination directory
   const destDir = path.dirname(destinationPath);
@@ -278,49 +319,61 @@ async function organizeItem(
     return { success: false, error: `Failed to create directory: ${error}` };
   }
 
-  // Copy/move file atomically
+  // ALWAYS MOVE file atomically (copy mode removed)
   try {
     const tempPath = `${destinationPath}.tmp`;
     
-    if (settings.copyMode) {
-      await fs.promises.copyFile(sourcePath, tempPath);
-    } else {
-      try {
-        await fs.promises.rename(sourcePath, tempPath);
-      } catch {
-        // Cross-device move - copy then delete
+    try {
+      // Try direct rename first (same filesystem)
+      await fs.promises.rename(sourcePath, tempPath);
+    } catch (renameError: any) {
+      if (renameError.code === "EXDEV") {
+        // Cross-device move: copy → verify → delete source
         await fs.promises.copyFile(sourcePath, tempPath);
+        
+        // Verify copy succeeded by checking file size
+        const sourceStats = await fs.promises.stat(sourcePath);
+        const tempStats = await fs.promises.stat(tempPath);
+        
+        if (sourceStats.size !== tempStats.size) {
+          await fs.promises.unlink(tempPath).catch(() => {});
+          return { success: false, error: "Copy verification failed - file sizes don't match" };
+        }
+        
+        // Delete source only after verified copy
         await fs.promises.unlink(sourcePath);
+      } else {
+        throw renameError;
       }
     }
     
-    // Atomic rename
+    // Atomic rename from temp to final destination
     await fs.promises.rename(tempPath, destinationPath);
     
     return { success: true, destinationPath };
   } catch (error) {
-    return { success: false, error: `Failed to ${settings.copyMode ? "copy" : "move"} file: ${error}` };
+    return { success: false, error: `Failed to move file: ${error}` };
   }
 }
 
-async function handleCollision(destPath: string, item: MediaItem): Promise<string> {
+async function handleCollision(destPath: string, item: MediaItem): Promise<{ path: string; skipped: boolean }> {
   try {
     await fs.promises.access(destPath);
     
     // File exists - check if identical
     const existingStats = await fs.promises.stat(destPath);
     
-    // Compare size
+    // Compare size - if same size, treat as duplicate and skip
     if (existingStats.size === item.fileSize) {
-      // Mark as duplicate and skip
+      // Mark as duplicate and skip the move
       await storage.updateMediaItem(item.id, {
         status: "skipped",
         duplicateOf: destPath,
       });
-      return destPath;
+      return { path: destPath, skipped: true };
     }
     
-    // Different file - auto-rename
+    // Different file - auto-rename with "(copy N)" suffix
     const ext = path.extname(destPath);
     const base = destPath.slice(0, -ext.length);
     let counter = 2;
@@ -332,11 +385,11 @@ async function handleCollision(destPath: string, item: MediaItem): Promise<strin
         counter++;
         newPath = `${base} (copy ${counter})${ext}`;
       } catch {
-        return newPath;
+        return { path: newPath, skipped: false };
       }
     }
   } catch {
     // File doesn't exist - use original path
-    return destPath;
+    return { path: destPath, skipped: false };
   }
 }

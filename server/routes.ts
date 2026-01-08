@@ -66,7 +66,7 @@ export async function registerRoutes(
         // Create default settings
         settings = await storage.upsertSettings({
           sourceFolders: [],
-          copyMode: true,
+          copyMode: false,
           autoOrganize: false,
         });
       }
