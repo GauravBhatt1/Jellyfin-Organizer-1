@@ -5,6 +5,8 @@ import { parseMediaFilename, isSupportedExtension } from "./parseMediaFilename";
 import { searchMovie, searchTV, getEpisodeTitle } from "./tmdb";
 import { getMediaDuration } from "./media-utils";
 import { decodeTaggedFolder, type LibraryType } from "@shared/library-utils";
+import { isAlreadyOrganized, isInsideDestinationRoot } from "./isAlreadyOrganized";
+import { computeDestinationPath, type DestinationSettings } from "./computeDestinationPath";
 import type { MediaItem } from "@shared/schema";
 import type { WSMessage } from "@shared/schema";
 
@@ -226,12 +228,20 @@ async function runScan(
   let processedFiles = 0;
   let newItems = 0;
   let errorsCount = 0;
+  let alreadyOrganizedCount = 0;
+
+  // Get destination settings for exclusion and already-organized detection
+  const settings = await storage.getSettings();
+  const destSettings: DestinationSettings = {
+    moviesDestination: settings?.moviesDestination || null,
+    tvShowsDestination: settings?.tvShowsDestination || null,
+  };
 
   try {
-    // First pass: count files
+    // First pass: count files (excluding destination folders)
     for (const folder of sourceFolders) {
       try {
-        totalFiles += await countMediaFiles(folder.path);
+        totalFiles += await countMediaFiles(folder.path, destSettings);
       } catch (error) {
         console.error(`Error counting files in ${folder.path}:`, error);
         errorsCount++;
@@ -256,11 +266,14 @@ async function runScan(
           processedFiles,
           totalFiles,
           newItems,
-          errorsCount
+          errorsCount,
+          alreadyOrganizedCount,
+          destSettings
         );
         processedFiles = result.processedFiles;
         newItems = result.newItems;
         errorsCount = result.errorsCount;
+        alreadyOrganizedCount = result.alreadyOrganizedCount;
       } catch (error) {
         console.error(`Error scanning folder ${folder.path}:`, error);
         errorsCount++;
@@ -285,10 +298,15 @@ async function runScan(
   }
 }
 
-async function countMediaFiles(dir: string): Promise<number> {
+async function countMediaFiles(dir: string, destSettings: DestinationSettings): Promise<number> {
   let count = 0;
 
   try {
+    // Skip if this directory is inside a destination folder
+    if (isInsideDestinationRoot(dir, destSettings)) {
+      return 0;
+    }
+
     const stats = await fs.promises.lstat(dir);
     
     // Skip symlinks
@@ -303,7 +321,7 @@ async function countMediaFiles(dir: string): Promise<number> {
         
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-          count += await countMediaFiles(fullPath);
+          count += await countMediaFiles(fullPath, destSettings);
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name).slice(1).toLowerCase();
           if (isSupportedExtension(ext)) {
@@ -329,14 +347,21 @@ async function scanDirectory(
   processedFiles: number,
   totalFiles: number,
   newItems: number,
-  errorsCount: number
-): Promise<{ processedFiles: number; newItems: number; errorsCount: number }> {
+  errorsCount: number,
+  alreadyOrganizedCount: number,
+  destSettings: DestinationSettings
+): Promise<{ processedFiles: number; newItems: number; errorsCount: number; alreadyOrganizedCount: number }> {
   try {
+    // Skip if this directory is inside a destination folder
+    if (isInsideDestinationRoot(dir, destSettings)) {
+      return { processedFiles, newItems, errorsCount, alreadyOrganizedCount };
+    }
+
     const stats = await fs.promises.lstat(dir);
     
     // Skip symlinks
     if (stats.isSymbolicLink()) {
-      return { processedFiles, newItems, errorsCount };
+      return { processedFiles, newItems, errorsCount, alreadyOrganizedCount };
     }
 
     // Block path traversal
@@ -344,7 +369,7 @@ async function scanDirectory(
     const normalizedRoot = path.normalize(rootFolder);
     if (!normalizedDir.startsWith(normalizedRoot)) {
       console.error(`Path traversal blocked: ${dir}`);
-      return { processedFiles, newItems, errorsCount: errorsCount + 1 };
+      return { processedFiles, newItems, errorsCount: errorsCount + 1, alreadyOrganizedCount };
     }
 
     if (stats.isDirectory()) {
@@ -365,11 +390,14 @@ async function scanDirectory(
             processedFiles,
             totalFiles,
             newItems,
-            errorsCount
+            errorsCount,
+            alreadyOrganizedCount,
+            destSettings
           );
           processedFiles = result.processedFiles;
           newItems = result.newItems;
           errorsCount = result.errorsCount;
+          alreadyOrganizedCount = result.alreadyOrganizedCount;
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name).slice(1).toLowerCase();
           
@@ -429,6 +457,30 @@ async function scanDirectory(
                   detectedType,
                 });
 
+                // Check if file is already in organized location
+                const mediaName = tmdbMatch?.name || parsed.cleanedName || parsed.detectedName || "Unknown";
+                const organizedCheck = isAlreadyOrganized({
+                  originalFullPath: fullPath,
+                  detectedType,
+                  name: mediaName,
+                  year: tmdbMatch?.year || parsed.year,
+                  season: parsed.season,
+                  episode: parsed.episode,
+                  episodeEnd: parsed.episodeEnd,
+                  extension: ext,
+                  settings: destSettings,
+                });
+
+                // Set status based on whether file is already organized
+                const fileStatus = organizedCheck.organized ? "organized" as const : "pending" as const;
+                const destinationPath = organizedCheck.organized ? organizedCheck.resolvedDestPath : null;
+                
+                // Boost confidence if already organized
+                if (organizedCheck.organized) {
+                  confidence = Math.max(confidence, 80);
+                  alreadyOrganizedCount++;
+                }
+
                 const mediaData = {
                   originalFilename: entry.name,
                   originalPath: dir,
@@ -444,12 +496,13 @@ async function scanDirectory(
                   episodeTitle,
                   duration,
                   isSeasonPack: parsed.isSeasonPack,
-                  status: "pending" as const,
+                  status: fileStatus,
                   confidence,
                   tmdbId: tmdbMatch?.tmdbId || null,
                   tmdbName: tmdbMatch?.name || null,
                   posterPath: tmdbMatch?.posterPath || null,
                   duplicateOf,
+                  destinationPath,
                 };
 
                 if (existingItem) {
@@ -497,5 +550,5 @@ async function scanDirectory(
     errorsCount++;
   }
 
-  return { processedFiles, newItems, errorsCount };
+  return { processedFiles, newItems, errorsCount, alreadyOrganizedCount };
 }
