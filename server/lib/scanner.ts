@@ -4,10 +4,16 @@ import { storage } from "../storage";
 import { parseFilename, isSupportedExtension } from "./filename-parser";
 import { searchMovie, searchTV, getEpisodeTitle } from "./tmdb";
 import { getMediaDuration } from "./media-utils";
+import { decodeTaggedFolder, type LibraryType } from "@shared/library-utils";
 import type { MediaItem } from "@shared/schema";
 import type { WSMessage } from "@shared/schema";
 
 export type WSBroadcast = (message: WSMessage) => void;
+
+interface SourceFolder {
+  path: string;
+  libraryType: LibraryType;
+}
 
 let isScanning = false;
 
@@ -189,6 +195,12 @@ export async function startScan(broadcast: WSBroadcast): Promise<string> {
 
   isScanning = true;
   
+  // Parse tagged source folders
+  const parsedFolders: SourceFolder[] = settings.sourceFolders.map(folder => {
+    const decoded = decodeTaggedFolder(folder);
+    return { path: decoded.path, libraryType: decoded.type };
+  });
+  
   const job = await storage.createScanJob({
     status: "running",
     totalFiles: 0,
@@ -198,7 +210,7 @@ export async function startScan(broadcast: WSBroadcast): Promise<string> {
   });
 
   // Run scan in background
-  runScan(job.id, settings.sourceFolders, broadcast).finally(() => {
+  runScan(job.id, parsedFolders, broadcast).finally(() => {
     isScanning = false;
   });
 
@@ -207,7 +219,7 @@ export async function startScan(broadcast: WSBroadcast): Promise<string> {
 
 async function runScan(
   jobId: string,
-  sourceFolders: string[],
+  sourceFolders: SourceFolder[],
   broadcast: WSBroadcast
 ): Promise<void> {
   let totalFiles = 0;
@@ -219,9 +231,9 @@ async function runScan(
     // First pass: count files
     for (const folder of sourceFolders) {
       try {
-        totalFiles += await countMediaFiles(folder);
+        totalFiles += await countMediaFiles(folder.path);
       } catch (error) {
-        console.error(`Error counting files in ${folder}:`, error);
+        console.error(`Error counting files in ${folder.path}:`, error);
         errorsCount++;
       }
     }
@@ -236,8 +248,9 @@ async function runScan(
     for (const folder of sourceFolders) {
       try {
         const result = await scanDirectory(
-          folder,
-          folder,
+          folder.path,
+          folder.path,
+          folder.libraryType,
           jobId,
           broadcast,
           processedFiles,
@@ -249,7 +262,7 @@ async function runScan(
         newItems = result.newItems;
         errorsCount = result.errorsCount;
       } catch (error) {
-        console.error(`Error scanning folder ${folder}:`, error);
+        console.error(`Error scanning folder ${folder.path}:`, error);
         errorsCount++;
       }
     }
@@ -310,6 +323,7 @@ async function countMediaFiles(dir: string): Promise<number> {
 async function scanDirectory(
   dir: string,
   rootFolder: string,
+  libraryType: LibraryType,
   jobId: string,
   broadcast: WSBroadcast,
   processedFiles: number,
@@ -345,6 +359,7 @@ async function scanDirectory(
           const result = await scanDirectory(
             fullPath,
             rootFolder,
+            libraryType,
             jobId,
             broadcast,
             processedFiles,
@@ -371,12 +386,20 @@ async function scanDirectory(
                 const parentFolder = path.basename(dir);
                 const parsed = parseFilename(entry.name, parentFolder);
                 
-                // Try TMDB lookup
+                // Override detectedType based on library type (unless mixed)
+                let detectedType = parsed.detectedType;
+                if (libraryType === 'movies') {
+                  detectedType = 'movie';
+                } else if (libraryType === 'tv') {
+                  detectedType = 'tv_show';
+                }
+                
+                // Try TMDB lookup based on resolved detectedType
                 let tmdbMatch = null;
                 let episodeTitle = null;
-                if (parsed.detectedType === "movie" && parsed.detectedName) {
+                if (detectedType === "movie" && parsed.detectedName) {
                   tmdbMatch = await searchMovie(parsed.detectedName, parsed.year || undefined);
-                } else if (parsed.detectedType === "tv_show" && parsed.detectedName) {
+                } else if (detectedType === "tv_show" && parsed.detectedName) {
                   tmdbMatch = await searchTV(parsed.detectedName);
                   // Fetch episode title if we have season/episode info
                   if (tmdbMatch && parsed.season !== null && parsed.episode !== null) {
@@ -404,7 +427,7 @@ async function scanDirectory(
                   cleanedName: parsed.cleanedName,
                   tmdbName: tmdbMatch?.name || null,
                   year: tmdbMatch?.year || parsed.year,
-                  detectedType: parsed.detectedType,
+                  detectedType,
                 });
 
                 const mediaData = {
@@ -412,7 +435,7 @@ async function scanDirectory(
                   originalPath: dir,
                   fileSize: fileStats.size,
                   extension: ext,
-                  detectedType: parsed.detectedType,
+                  detectedType,
                   detectedName: parsed.detectedName,
                   cleanedName: parsed.cleanedName,
                   year: tmdbMatch?.year || parsed.year,
