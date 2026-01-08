@@ -36,8 +36,16 @@ Preferred communication style: Simple, everyday language.
   - `tv_series` / `movies` - Organized media metadata
   - `organization_logs` - File operation history
 
+### Library Management (Jellyfin-style)
+- **Library Types**: Movies and TV Shows are treated as separate libraries with their own source folders and destinations
+- **Tagged Folders**: Source folders are stored with type prefixes (`MOVIES:/path`, `TV:/path`, `MIXED:/path`)
+- **Library Utils** (`shared/library-utils.ts`): Encoding/decoding utilities for tagged folder format
+- **Backward Compatibility**: Legacy untagged folders are preserved as "mixed" and displayed with assignment options in Settings UI
+
 ### Core Processing Pipeline
 1. **Scanner** (`server/lib/scanner.ts`): Recursively scans configured source folders for media files
+   - Parses tagged folder prefixes to determine library type
+   - Overrides detected content type based on library (Movies library = movie, TV library = tv_show)
 2. **Filename Parser** (`server/lib/filename-parser.ts`): Pattern matching to extract title, year, season/episode from filenames
 3. **TMDB Integration** (`server/lib/tmdb.ts`): Fetches metadata, posters, and episode information
 4. **Organizer** (`server/lib/organizer.ts`): Copies or moves files to destination folders with proper naming

@@ -7,27 +7,34 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { FolderPickerDialog } from "@/components/folder-picker-dialog";
+import { LibraryCard } from "@/components/library-management";
+import { 
+  extractLibrariesFromSettings, 
+  buildSourceFoldersFromLibraries,
+  type Library,
+  type MixedFolderEntry 
+} from "@shared/library-utils";
 import type { Settings as SettingsType } from "@shared/schema";
 import { 
-  Plus, 
-  X, 
   Loader2,
-  FolderOpen,
+  AlertTriangle,
+  Film,
+  Tv,
+  Plus,
+  Folder,
 } from "lucide-react";
 
 export default function Settings() {
   const { toast } = useToast();
-  const [formData, setFormData] = useState<Partial<SettingsType>>({
-    tmdbApiKey: "",
-    sourceFolders: [],
-    moviesDestinations: [],
-    tvShowsDestinations: [],
-    copyMode: true,
-    autoOrganize: false,
-  });
   
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerTarget, setPickerTarget] = useState<"source" | "movies" | "tvshows">("source");
+  const [tmdbApiKey, setTmdbApiKey] = useState("");
+  const [copyMode, setCopyMode] = useState(true);
+  const [autoOrganize, setAutoOrganize] = useState(false);
+  const [libraries, setLibraries] = useState<Library[]>([]);
+  const [mixedFolders, setMixedFolders] = useState<MixedFolderEntry[]>([]);
+  
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [folderPickerTarget, setFolderPickerTarget] = useState<{ type: "movies" | "tv"; mode: "add" | "dest" } | null>(null);
 
   const { data: settings, isLoading } = useQuery<SettingsType>({
     queryKey: ["/api/settings"],
@@ -35,14 +42,18 @@ export default function Settings() {
 
   useEffect(() => {
     if (settings) {
-      setFormData({
-        tmdbApiKey: settings.tmdbApiKey || "",
-        sourceFolders: settings.sourceFolders || [],
-        moviesDestinations: settings.moviesDestinations || (settings.moviesDestination ? [settings.moviesDestination] : []),
-        tvShowsDestinations: settings.tvShowsDestinations || (settings.tvShowsDestination ? [settings.tvShowsDestination] : []),
-        copyMode: settings.copyMode ?? true,
-        autoOrganize: settings.autoOrganize ?? false,
-      });
+      setTmdbApiKey(settings.tmdbApiKey || "");
+      setCopyMode(settings.copyMode ?? true);
+      setAutoOrganize(settings.autoOrganize ?? false);
+      
+      const { libraries: extractedLibraries, mixedFolders: extractedMixed } = extractLibrariesFromSettings(
+        settings.sourceFolders || [],
+        settings.moviesDestination || null,
+        settings.tvShowsDestination || null
+      );
+      
+      setLibraries(extractedLibraries);
+      setMixedFolders(extractedMixed);
     }
   }, [settings]);
 
@@ -59,62 +70,100 @@ export default function Settings() {
     },
   });
 
-  const openPicker = (target: "source" | "movies" | "tvshows") => {
-    setPickerTarget(target);
-    setPickerOpen(true);
+  const getLibrary = (type: "movies" | "tv"): Library => {
+    return libraries.find(l => l.type === type) || {
+      type,
+      folders: [],
+      destination: type === "movies" ? "/organized/movies" : "/organized/tvshows"
+    };
   };
 
-  const handleFolderSelect = (path: string) => {
-    if (pickerTarget === "source") {
-      if (!formData.sourceFolders?.includes(path)) {
-        setFormData({
-          ...formData,
-          sourceFolders: [...(formData.sourceFolders || []), path],
-        });
+  const updateLibrary = (updatedLibrary: Library) => {
+    setLibraries(libs => {
+      const existing = libs.findIndex(l => l.type === updatedLibrary.type);
+      if (existing >= 0) {
+        const newLibs = [...libs];
+        newLibs[existing] = updatedLibrary;
+        return newLibs;
       }
-    } else if (pickerTarget === "movies") {
-      if (!formData.moviesDestinations?.includes(path)) {
-        setFormData({
-          ...formData,
-          moviesDestinations: [...(formData.moviesDestinations || []), path],
-        });
+      return [...libs, updatedLibrary];
+    });
+  };
+
+  const handleAddFolder = (type: "movies" | "tv") => {
+    setFolderPickerTarget({ type, mode: "add" });
+    setFolderPickerOpen(true);
+  };
+
+  const handleChangeDestination = (type: "movies" | "tv") => {
+    setFolderPickerTarget({ type, mode: "dest" });
+    setFolderPickerOpen(true);
+  };
+
+  const handleFolderSelected = (path: string) => {
+    if (!folderPickerTarget) return;
+    
+    const lib = getLibrary(folderPickerTarget.type);
+    
+    if (folderPickerTarget.mode === "add") {
+      if (!lib.folders.includes(path)) {
+        updateLibrary({ ...lib, folders: [...lib.folders, path] });
       }
-    } else if (pickerTarget === "tvshows") {
-      if (!formData.tvShowsDestinations?.includes(path)) {
-        setFormData({
-          ...formData,
-          tvShowsDestinations: [...(formData.tvShowsDestinations || []), path],
-        });
-      }
+    } else {
+      updateLibrary({ ...lib, destination: path });
     }
   };
 
-  const removeSourceFolder = (index: number) => {
-    const updated = [...(formData.sourceFolders || [])];
-    updated.splice(index, 1);
-    setFormData({ ...formData, sourceFolders: updated });
-  };
-
-  const removeMoviesDestination = (index: number) => {
-    const updated = [...(formData.moviesDestinations || [])];
-    updated.splice(index, 1);
-    setFormData({ ...formData, moviesDestinations: updated });
-  };
-
-  const removeTvShowsDestination = (index: number) => {
-    const updated = [...(formData.tvShowsDestinations || [])];
-    updated.splice(index, 1);
-    setFormData({ ...formData, tvShowsDestinations: updated });
+  const handleRemoveFolder = (type: "movies" | "tv", index: number) => {
+    const lib = getLibrary(type);
+    const newFolders = lib.folders.filter((_, i) => i !== index);
+    updateLibrary({ ...lib, folders: newFolders });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const dataToSave = {
-      ...formData,
-      moviesDestination: formData.moviesDestinations?.[0] || "",
-      tvShowsDestination: formData.tvShowsDestinations?.[0] || "",
+    
+    const sourceFolders = buildSourceFoldersFromLibraries(libraries, mixedFolders);
+    const moviesLib = libraries.find(l => l.type === "movies");
+    const tvLib = libraries.find(l => l.type === "tv");
+    
+    const dataToSave: Partial<SettingsType> = {
+      tmdbApiKey,
+      sourceFolders,
+      copyMode,
+      autoOrganize,
     };
+    
+    if (moviesLib) {
+      dataToSave.moviesDestination = moviesLib.destination;
+    }
+    if (tvLib) {
+      dataToSave.tvShowsDestination = tvLib.destination;
+    }
+    
     updateMutation.mutate(dataToSave);
+  };
+  
+  const handleRemoveMixedFolder = (index: number) => {
+    setMixedFolders(mixed => mixed.filter((_, i) => i !== index));
+  };
+  
+  const handleAssignMixedFolder = (index: number, toType: "movies" | "tv") => {
+    const mixed = mixedFolders[index];
+    const lib = getLibrary(toType);
+    if (!lib.folders.includes(mixed.path)) {
+      updateLibrary({ ...lib, folders: [...lib.folders, mixed.path] });
+    }
+    setMixedFolders(m => m.filter((_, i) => i !== index));
+  };
+  
+  const handleCreateLibrary = (type: "movies" | "tv") => {
+    const newLib: Library = {
+      type,
+      folders: [],
+      destination: type === "movies" ? "/organized/movies" : "/organized/tvshows"
+    };
+    setLibraries(libs => [...libs, newLib]);
   };
 
   if (isLoading) {
@@ -125,35 +174,19 @@ export default function Settings() {
     );
   }
 
-  const FolderItem = ({ path, onRemove }: { path: string; onRemove: () => void }) => (
-    <div className="flex items-center justify-between py-3 border-b border-border/50 last:border-0">
-      <div className="flex items-center gap-3 min-w-0">
-        <FolderOpen className="h-5 w-5 text-primary shrink-0" />
-        <span className="text-sm font-mono truncate">{path}</span>
-      </div>
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        onClick={onRemove}
-        className="shrink-0"
-      >
-        <X className="h-4 w-4" />
-      </Button>
-    </div>
-  );
+  const moviesLibrary = libraries.find(l => l.type === "movies");
+  const tvLibrary = libraries.find(l => l.type === "tv");
 
   return (
     <div className="max-w-2xl mx-auto py-6 px-4">
       <form onSubmit={handleSubmit} className="space-y-8">
         
-        {/* TMDB API Key */}
         <div className="space-y-3">
           <Label className="text-primary text-sm">TMDB API Key</Label>
           <Input
             type="password"
-            value={formData.tmdbApiKey || ""}
-            onChange={(e) => setFormData({ ...formData, tmdbApiKey: e.target.value })}
+            value={tmdbApiKey}
+            onChange={(e) => setTmdbApiKey(e.target.value)}
             placeholder="Enter your TMDB API key"
             className="bg-muted/30 border-primary/50 focus:border-primary"
             data-testid="input-tmdb-key"
@@ -163,103 +196,112 @@ export default function Settings() {
           </p>
         </div>
 
-        {/* Source Folders */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <span className="text-lg font-medium">Source Folders</span>
-            <Button
-              type="button"
-              size="icon"
-              variant="secondary"
-              onClick={() => openPicker("source")}
-              className="rounded-full h-8 w-8"
-              data-testid="button-add-source"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium">Libraries</h2>
           </div>
-          <div className="bg-muted/20 rounded-md">
-            {formData.sourceFolders && formData.sourceFolders.length > 0 ? (
-              <div className="px-4">
-                {formData.sourceFolders.map((folder, index) => (
-                  <FolderItem 
-                    key={index} 
-                    path={folder} 
-                    onRemove={() => removeSourceFolder(index)} 
-                  />
-                ))}
-              </div>
+          
+          <p className="text-sm text-muted-foreground">
+            Configure your media libraries. Add folders containing your movies and TV shows, 
+            and set where organized files should be saved.
+          </p>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {moviesLibrary ? (
+              <LibraryCard
+                library={moviesLibrary}
+                onAddFolder={() => handleAddFolder("movies")}
+                onRemoveFolder={(index) => handleRemoveFolder("movies", index)}
+                onChangeDestination={() => handleChangeDestination("movies")}
+              />
             ) : (
-              <p className="text-sm text-muted-foreground p-4">No source folders added</p>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-32 flex-col gap-2 border-dashed"
+                onClick={() => handleCreateLibrary("movies")}
+                data-testid="button-create-movies-library"
+              >
+                <Film className="h-8 w-8 text-muted-foreground" />
+                <span>Add Movies Library</span>
+              </Button>
+            )}
+            
+            {tvLibrary ? (
+              <LibraryCard
+                library={tvLibrary}
+                onAddFolder={() => handleAddFolder("tv")}
+                onRemoveFolder={(index) => handleRemoveFolder("tv", index)}
+                onChangeDestination={() => handleChangeDestination("tv")}
+              />
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-32 flex-col gap-2 border-dashed"
+                onClick={() => handleCreateLibrary("tv")}
+                data-testid="button-create-tv-library"
+              >
+                <Tv className="h-8 w-8 text-muted-foreground" />
+                <span>Add TV Shows Library</span>
+              </Button>
             )}
           </div>
-        </div>
-
-        {/* Movies Destination */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <span className="text-lg font-medium">Movies Destination</span>
-            <Button
-              type="button"
-              size="icon"
-              variant="secondary"
-              onClick={() => openPicker("movies")}
-              className="rounded-full h-8 w-8"
-              data-testid="button-add-movies"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="bg-muted/20 rounded-md">
-            {formData.moviesDestinations && formData.moviesDestinations.length > 0 ? (
-              <div className="px-4">
-                {formData.moviesDestinations.map((dest, index) => (
-                  <FolderItem 
-                    key={index} 
-                    path={dest} 
-                    onRemove={() => removeMoviesDestination(index)} 
-                  />
+          
+          {mixedFolders.length > 0 && (
+            <div className="p-4 rounded-md bg-chart-4/10 border border-chart-4/30 space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-chart-4" />
+                <span className="font-medium text-chart-4">Legacy Folders</span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                These folders were added before library types were introduced. 
+                Assign them to a library or they will be scanned as mixed content.
+              </p>
+              <div className="space-y-2">
+                {mixedFolders.map((mixed, index) => (
+                  <div 
+                    key={index}
+                    className="flex items-center gap-2 p-2 rounded-md bg-background"
+                  >
+                    <span className="text-sm font-mono truncate flex-1" title={mixed.path}>
+                      {mixed.path}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleAssignMixedFolder(index, "movies")}
+                      data-testid={`button-assign-movies-${index}`}
+                    >
+                      Movies
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleAssignMixedFolder(index, "tv")}
+                      data-testid={`button-assign-tv-${index}`}
+                    >
+                      TV Shows
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRemoveMixedFolder(index)}
+                      className="text-destructive"
+                      data-testid={`button-remove-mixed-${index}`}
+                    >
+                      Remove
+                    </Button>
+                  </div>
                 ))}
               </div>
-            ) : (
-              <p className="text-sm text-muted-foreground p-4">No movies destination set</p>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* TV Shows Destination */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <span className="text-lg font-medium">TV Shows Destination</span>
-            <Button
-              type="button"
-              size="icon"
-              variant="secondary"
-              onClick={() => openPicker("tvshows")}
-              className="rounded-full h-8 w-8"
-              data-testid="button-add-tvshows"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="bg-muted/20 rounded-md">
-            {formData.tvShowsDestinations && formData.tvShowsDestinations.length > 0 ? (
-              <div className="px-4">
-                {formData.tvShowsDestinations.map((dest, index) => (
-                  <FolderItem 
-                    key={index} 
-                    path={dest} 
-                    onRemove={() => removeTvShowsDestination(index)} 
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground p-4">No TV shows destination set</p>
-            )}
-          </div>
-        </div>
-
-        {/* Options */}
         <div className="space-y-4 pt-4 border-t border-border">
           <div className="flex items-center justify-between">
             <div>
@@ -268,8 +310,8 @@ export default function Settings() {
             </div>
             <Switch
               id="copyMode"
-              checked={formData.copyMode ?? true}
-              onCheckedChange={(checked) => setFormData({ ...formData, copyMode: checked })}
+              checked={copyMode}
+              onCheckedChange={setCopyMode}
               data-testid="switch-copy-mode"
             />
           </div>
@@ -280,14 +322,13 @@ export default function Settings() {
             </div>
             <Switch
               id="autoOrganize"
-              checked={formData.autoOrganize ?? false}
-              onCheckedChange={(checked) => setFormData({ ...formData, autoOrganize: checked })}
+              checked={autoOrganize}
+              onCheckedChange={setAutoOrganize}
               data-testid="switch-auto-organize"
             />
           </div>
         </div>
 
-        {/* Save Button */}
         <Button
           type="submit"
           disabled={updateMutation.isPending}
@@ -304,15 +345,13 @@ export default function Settings() {
       </form>
 
       <FolderPickerDialog
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        onSelect={handleFolderSelect}
+        open={folderPickerOpen}
+        onOpenChange={setFolderPickerOpen}
+        onSelect={handleFolderSelected}
         title={
-          pickerTarget === "source" 
-            ? "Select Source Folder" 
-            : pickerTarget === "movies" 
-            ? "Select Movies Destination" 
-            : "Select TV Shows Destination"
+          folderPickerTarget?.mode === "add"
+            ? `Add Folder to ${folderPickerTarget.type === "movies" ? "Movies" : "TV Shows"} Library`
+            : `Select ${folderPickerTarget?.type === "movies" ? "Movies" : "TV Shows"} Destination`
         }
       />
     </div>

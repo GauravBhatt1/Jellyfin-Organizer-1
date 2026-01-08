@@ -30,8 +30,10 @@ export function decodeTaggedFolder(taggedPath: string): LibraryFolder {
     return { type: 'movies', path };
   } else if (prefix === 'TV') {
     return { type: 'tv', path };
+  } else if (prefix === 'MIXED') {
+    return { type: 'mixed', path };
   } else {
-    return { type: 'mixed', path: taggedPath };
+    return { type: 'mixed', path };
   }
 }
 
@@ -50,7 +52,15 @@ export function groupFoldersByType(sourceFolders: string[]): { movies: string[];
   return result;
 }
 
-export function buildSourceFoldersFromLibraries(libraries: Library[]): string[] {
+export interface MixedFolderEntry {
+  path: string;
+  originalTagged: string;
+}
+
+export function buildSourceFoldersFromLibraries(
+  libraries: Library[], 
+  mixedFolders: MixedFolderEntry[] = []
+): string[] {
   const result: string[] = [];
   
   for (const library of libraries) {
@@ -59,41 +69,58 @@ export function buildSourceFoldersFromLibraries(libraries: Library[]): string[] 
     }
   }
   
+  for (const mixed of mixedFolders) {
+    result.push(mixed.originalTagged);
+  }
+  
   return result;
+}
+
+export interface ExtractedLibrariesResult {
+  libraries: Library[];
+  mixedFolders: MixedFolderEntry[];
 }
 
 export function extractLibrariesFromSettings(
   sourceFolders: string[],
-  moviesDestination: string,
-  tvShowsDestination: string
-): Library[] {
-  const grouped = groupFoldersByType(sourceFolders);
-  
+  moviesDestination: string | null | undefined,
+  tvShowsDestination: string | null | undefined
+): ExtractedLibrariesResult {
   const libraries: Library[] = [];
+  const mixedFolders: MixedFolderEntry[] = [];
   
-  if (grouped.movies.length > 0 || moviesDestination) {
+  const moviesFolders: string[] = [];
+  const tvFolders: string[] = [];
+  
+  for (const folder of sourceFolders) {
+    const decoded = decodeTaggedFolder(folder);
+    if (decoded.type === 'movies') {
+      moviesFolders.push(decoded.path);
+    } else if (decoded.type === 'tv') {
+      tvFolders.push(decoded.path);
+    } else {
+      mixedFolders.push({ path: decoded.path, originalTagged: folder });
+    }
+  }
+  
+  const hasMovies = moviesFolders.length > 0 || !!moviesDestination;
+  const hasTV = tvFolders.length > 0 || !!tvShowsDestination;
+  
+  if (hasMovies) {
     libraries.push({
       type: 'movies',
-      folders: grouped.movies,
+      folders: moviesFolders,
       destination: moviesDestination || '/organized/movies'
     });
   }
   
-  if (grouped.tv.length > 0 || tvShowsDestination) {
+  if (hasTV) {
     libraries.push({
       type: 'tv',
-      folders: grouped.tv,
+      folders: tvFolders,
       destination: tvShowsDestination || '/organized/tvshows'
     });
   }
   
-  if (grouped.mixed.length > 0) {
-    libraries.push({
-      type: 'movies',
-      folders: grouped.mixed,
-      destination: moviesDestination || '/organized/movies'
-    });
-  }
-  
-  return libraries;
+  return { libraries, mixedFolders };
 }
