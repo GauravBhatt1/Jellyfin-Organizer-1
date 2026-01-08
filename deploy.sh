@@ -1,70 +1,121 @@
 #!/bin/bash
 
 # Jellyfin Media Organizer - One-Click VPS Deploy Script
-# Usage: curl -fsSL <url>/deploy.sh | bash
+# Usage: curl -fsSL <raw-github-url>/deploy.sh | bash
+
+set -e
 
 echo "=========================================="
 echo "  Jellyfin Media Organizer - VPS Deploy"
 echo "=========================================="
+echo ""
+
+APP_DIR="/opt/jellyfin-organizer"
 
 # Check if Docker is installed
 if ! command -v docker &> /dev/null; then
-    echo "Installing Docker..."
+    echo "[1/4] Installing Docker..."
     curl -fsSL https://get.docker.com | sh
-    sudo usermod -aG docker $USER
+    sudo systemctl start docker
+    sudo systemctl enable docker
+else
+    echo "[1/4] Docker already installed"
 fi
 
-# Check if Docker Compose is installed
-if ! command -v docker-compose &> /dev/null; then
-    echo "Installing Docker Compose..."
-    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    sudo chmod +x /usr/local/bin/docker-compose
+# Check if Docker Compose is available
+if ! docker compose version &> /dev/null; then
+    echo "[2/4] Installing Docker Compose..."
+    sudo apt-get update && sudo apt-get install -y docker-compose-plugin
+else
+    echo "[2/4] Docker Compose already installed"
 fi
 
 # Create app directory
-APP_DIR="${APP_DIR:-/opt/jellyfin-organizer}"
-echo "Creating app directory at $APP_DIR..."
+echo "[3/4] Setting up application..."
 sudo mkdir -p $APP_DIR
 cd $APP_DIR
 
-# Clone or update repository (if using git)
-# git clone <your-repo-url> . || git pull
+# Create docker-compose.yml
+cat > docker-compose.yml << 'EOF'
+version: '3.8'
 
-# Create default directories
-echo "Creating media directories..."
-sudo mkdir -p /mnt/media /mnt/movies /mnt/tvshows
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/jellyfin_organizer
+      - SESSION_SECRET=change-this-secret-key-in-production
+      - NODE_ENV=production
+    volumes:
+      - /mnt:/mnt
+      - /media:/media
+      - /home:/home
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
 
-# Set environment variables
-export MEDIA_PATH="${MEDIA_PATH:-/mnt/media}"
-export MOVIES_PATH="${MOVIES_PATH:-/mnt/movies}"
-export TVSHOWS_PATH="${TVSHOWS_PATH:-/mnt/tvshows}"
-export SESSION_SECRET="${SESSION_SECRET:-$(openssl rand -hex 32)}"
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=jellyfin_organizer
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
-echo ""
-echo "Configuration:"
-echo "  Media Source: $MEDIA_PATH"
-echo "  Movies Dest:  $MOVIES_PATH"
-echo "  TV Shows Dest: $TVSHOWS_PATH"
-echo ""
+volumes:
+  postgres_data:
+EOF
 
-# Start the application
-echo "Starting Jellyfin Media Organizer..."
-docker-compose up -d --build
+# Create Dockerfile
+cat > Dockerfile << 'EOF'
+FROM node:20-alpine AS builder
+WORKDIR /app
+RUN apk add --no-cache git ffmpeg
+RUN git clone https://github.com/YOUR_USERNAME/jellyfin-organizer.git .
+RUN npm ci && npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+RUN apk add --no-cache ffmpeg
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package*.json ./
+RUN npm ci --only=production
+EXPOSE 5000
+ENV NODE_ENV=production
+CMD ["node", "dist/index.js"]
+EOF
+
+echo "[4/4] Starting application..."
+docker compose up -d --build
 
 echo ""
 echo "=========================================="
 echo "  Deployment Complete!"
 echo "=========================================="
 echo ""
-echo "Access the app at: http://$(hostname -I | awk '{print $1}'):5000"
+echo "App URL: http://$(hostname -I | awk '{print $1}'):5000"
 echo ""
-echo "To change media paths, edit docker-compose.yml or set:"
-echo "  export MEDIA_PATH=/your/media/path"
-echo "  export MOVIES_PATH=/your/movies/path"
-echo "  export TVSHOWS_PATH=/your/tvshows/path"
+echo "Next Steps:"
+echo "  1. Open the app in browser"
+echo "  2. Go to Settings page"
+echo "  3. Add your TMDB API key"
+echo "  4. Configure source and destination folders"
 echo ""
 echo "Commands:"
-echo "  docker-compose logs -f    # View logs"
-echo "  docker-compose restart    # Restart app"
-echo "  docker-compose down       # Stop app"
+echo "  cd $APP_DIR"
+echo "  docker compose logs -f     # View logs"
+echo "  docker compose restart     # Restart"
+echo "  docker compose down        # Stop"
 echo ""
