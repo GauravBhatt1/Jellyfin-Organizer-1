@@ -128,16 +128,16 @@ export default function Dashboard() {
         ) : stats ? (
           <>
             <StatCard
-              title="TV Shows"
+              title="TV Series"
               value={stats.tvShows}
               icon={Tv}
-              description="Series detected"
+              description="Unique series detected"
             />
             <StatCard
               title="Movies"
               value={stats.movies}
               icon={Film}
-              description="Films detected"
+              description="Unique movies detected"
             />
             <StatCard
               title="Errors"

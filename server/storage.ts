@@ -311,8 +311,42 @@ export class DatabaseStorage implements IStorage {
     const pending = allItems.filter(i => i.status === "pending").length;
     const duplicates = allItems.filter(i => i.duplicateOf !== null).length;
     const errors = allItems.filter(i => i.status === "error").length;
-    const tvShowsCount = allItems.filter(i => i.detectedType === "tv_show").length;
-    const moviesCount = allItems.filter(i => i.detectedType === "movie").length;
+    
+    // Count unique TV series - prefer tv_series table, else count distinct names
+    const tvSeriesFromTable = await db.select().from(tvSeries);
+    let tvShowsCount: number;
+    if (tvSeriesFromTable.length > 0) {
+      tvShowsCount = tvSeriesFromTable.length;
+    } else {
+      // Count distinct series names from media items
+      const tvItems = allItems.filter(i => i.detectedType === "tv_show");
+      const uniqueSeriesNames = new Set<string>();
+      for (const item of tvItems) {
+        const name = (item.tmdbName || item.detectedName || "").trim();
+        if (name) {
+          uniqueSeriesNames.add(name.toLowerCase());
+        }
+      }
+      tvShowsCount = uniqueSeriesNames.size;
+    }
+    
+    // Count unique movies - prefer movies table, else count distinct names
+    const moviesFromTable = await db.select().from(movies);
+    let moviesCount: number;
+    if (moviesFromTable.length > 0) {
+      moviesCount = moviesFromTable.length;
+    } else {
+      // Count distinct movie names from media items
+      const movieItems = allItems.filter(i => i.detectedType === "movie");
+      const uniqueMovieNames = new Set<string>();
+      for (const item of movieItems) {
+        const name = (item.tmdbName || item.detectedName || "").trim();
+        if (name) {
+          uniqueMovieNames.add(name.toLowerCase());
+        }
+      }
+      moviesCount = uniqueMovieNames.size;
+    }
 
     return {
       total,
@@ -340,7 +374,7 @@ export class DatabaseStorage implements IStorage {
     }
     
     const result: DuplicateGroup[] = [];
-    for (const [primaryId, duplicateItems] of groups) {
+    for (const [primaryId, duplicateItems] of Array.from(groups.entries())) {
       const primary = allItems.find(i => i.id === primaryId);
       if (primary) {
         result.push({
