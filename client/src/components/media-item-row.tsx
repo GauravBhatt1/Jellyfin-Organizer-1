@@ -29,7 +29,7 @@ export function MediaItemRow({ item, isSelected, onSelect, onEdit, onDelete, onR
       case "tv_show":
         return <Tv className="h-4 w-4 text-chart-1" />;
       default:
-        return <HelpCircle className="h-4 w-4 text-muted-foreground" />;
+        return <HelpCircle className="h-4 w-4 text-chart-4" />;
     }
   };
 
@@ -102,12 +102,15 @@ export function MediaItemRow({ item, isSelected, onSelect, onEdit, onDelete, onR
       </td>
       <td className="p-3 max-w-xs">
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {getTypeIcon()}
             <span className="font-medium truncate" title={getDisplayName()}>
               {getDisplayName()}
             </span>
             {item.year && <span className="text-muted-foreground">({item.year})</span>}
+            {item.detectedType === "unknown" && (
+              <Badge variant="outline" className="text-xs text-chart-4 border-chart-4/50">Unknown</Badge>
+            )}
             {getSeasonEpisode() && (
               <Badge variant="outline" className="text-xs">{getSeasonEpisode()}</Badge>
             )}
@@ -144,17 +147,30 @@ export function MediaItemRow({ item, isSelected, onSelect, onEdit, onDelete, onR
         {getStatusBadge()}
       </td>
       <td className="w-16 p-3">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="icon" variant="ghost" data-testid={`button-actions-${item.id}`}>
-              <MoreHorizontal className="h-4 w-4" />
+        <div className="flex items-center gap-1">
+          {item.detectedType === "unknown" && (
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={() => onEdit?.(item)} 
+              className="text-chart-4 border-chart-4/50 gap-1"
+              data-testid={`button-categorize-${item.id}`}
+            >
+              <Edit className="h-3 w-3" />
+              Tag
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onEdit?.(item)} data-testid={`button-edit-${item.id}`}>
-              <Edit className="h-4 w-4 mr-2" />
-              Edit
-            </DropdownMenuItem>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" data-testid={`button-actions-${item.id}`}>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onEdit?.(item)} data-testid={`button-edit-${item.id}`}>
+                <Edit className="h-4 w-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
             {item.status === "organized" && (
               <DropdownMenuItem onClick={() => onUndo?.(item.id)} data-testid={`button-undo-${item.id}`}>
                 <Undo2 className="h-4 w-4 mr-2" />
@@ -174,7 +190,8 @@ export function MediaItemRow({ item, isSelected, onSelect, onEdit, onDelete, onR
               Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
-        </DropdownMenu>
+          </DropdownMenu>
+        </div>
       </td>
     </tr>
   );

@@ -25,7 +25,8 @@ import {
   Filter, 
   Play, 
   Loader2,
-  AlertTriangle 
+  AlertTriangle,
+  HelpCircle
 } from "lucide-react";
 
 export default function Organizer() {
@@ -161,6 +162,8 @@ export default function Organizer() {
     (item) => item.status === "pending" && selectedIds.has(item.id)
   );
   const canOrganize = pendingItems && pendingItems.length > 0;
+  
+  const unknownCount = items?.filter(item => item.detectedType === "unknown").length || 0;
 
   return (
     <div className="space-y-6">
@@ -194,6 +197,27 @@ export default function Organizer() {
           successCount={activeOrganize.successCount}
           failedCount={activeOrganize.failedCount}
         />
+      )}
+
+      {unknownCount > 0 && typeFilter !== "unknown" && (
+        <div className="flex items-center gap-3 p-4 rounded-md bg-chart-4/10 border border-chart-4/30">
+          <HelpCircle className="h-5 w-5 text-chart-4 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="font-medium text-chart-4">{unknownCount} unknown item{unknownCount !== 1 ? 's' : ''} need categorizing</p>
+            <p className="text-sm text-muted-foreground">
+              Click the "Tag" button or filter by "Unknown" to categorize these files as Movie or TV Show.
+            </p>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => setTypeFilter("unknown")}
+            className="text-chart-4 border-chart-4/50"
+            data-testid="button-filter-unknown"
+          >
+            Show Unknown
+          </Button>
+        </div>
       )}
 
       <Card>
