@@ -259,7 +259,6 @@ async function runScan(
       processedFiles,
       newItems,
       errorsCount,
-      completedAt: new Date(),
     });
 
     broadcast({ type: "scan:done", data: { jobId, status: "completed" } });
@@ -268,7 +267,6 @@ async function runScan(
     await storage.updateScanJob(jobId, {
       status: "failed",
       error: error instanceof Error ? error.message : "Unknown error",
-      completedAt: new Date(),
     });
     broadcast({ type: "scan:done", data: { jobId, status: "failed" } });
   }

@@ -9,6 +9,7 @@ import {
   Settings,
   Moon,
   Sun,
+  History,
 } from "lucide-react";
 import {
   Sidebar,
@@ -34,6 +35,7 @@ const navItems = [
   { title: "Duplicates", url: "/duplicates", icon: Copy },
   { title: "TV Shows", url: "/tv-shows", icon: Tv },
   { title: "Movies", url: "/movies", icon: Film },
+  { title: "History", url: "/history", icon: History },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 

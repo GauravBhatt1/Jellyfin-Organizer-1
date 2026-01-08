@@ -16,7 +16,12 @@ export async function startOrganize(
   }
 
   const settings = await storage.getSettings();
-  if (!settings?.moviesDestination && !settings?.tvShowsDestination) {
+  
+  // Check both legacy and new array-based destinations
+  const moviesPath = getDestinationPath(settings, "movies");
+  const tvShowsPath = getDestinationPath(settings, "tv_shows");
+  
+  if (!moviesPath && !tvShowsPath) {
     throw new Error("No destination folders configured");
   }
 
@@ -30,12 +35,40 @@ export async function startOrganize(
     failedCount: 0,
   });
 
-  // Run organize in background
-  runOrganize(job.id, itemIds, settings, broadcast).finally(() => {
+  // Run organize in background with resolved paths
+  // Default to copy mode (true) for safety - moves require explicit opt-in
+  const resolvedSettings = {
+    moviesDestination: moviesPath,
+    tvShowsDestination: tvShowsPath,
+    copyMode: settings?.copyMode ?? true,
+  };
+  
+  runOrganize(job.id, itemIds, resolvedSettings, broadcast).finally(() => {
     isOrganizing = false;
   });
 
   return job.id;
+}
+
+// Helper to get destination path from settings (supports both legacy and array fields)
+function getDestinationPath(
+  settings: { moviesDestination?: string | null; tvShowsDestination?: string | null; moviesDestinations?: string[] | null; tvShowsDestinations?: string[] | null } | undefined,
+  type: "movies" | "tv_shows"
+): string | null {
+  if (!settings) return null;
+  
+  if (type === "movies") {
+    // Prefer array (first element), fallback to legacy field
+    if (settings.moviesDestinations && settings.moviesDestinations.length > 0) {
+      return settings.moviesDestinations[0];
+    }
+    return settings.moviesDestination || null;
+  } else {
+    if (settings.tvShowsDestinations && settings.tvShowsDestinations.length > 0) {
+      return settings.tvShowsDestinations[0];
+    }
+    return settings.tvShowsDestination || null;
+  }
 }
 
 async function runOrganize(
@@ -176,7 +209,6 @@ async function runOrganize(
       processedFiles,
       successCount,
       failedCount,
-      completedAt: new Date(),
     });
 
     broadcast({ type: "organize:done", data: { jobId, status: "completed" } });
@@ -186,7 +218,6 @@ async function runOrganize(
     await storage.updateOrganizeJob(jobId, {
       status: "failed",
       error: error instanceof Error ? error.message : "Unknown error",
-      completedAt: new Date(),
     });
 
     broadcast({ type: "organize:done", data: { jobId, status: "failed" } });

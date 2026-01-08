@@ -8,7 +8,7 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Film, Tv, HelpCircle, Edit, Trash2, AlertTriangle, CheckCircle, Clock, XCircle } from "lucide-react";
+import { MoreHorizontal, Film, Tv, HelpCircle, Edit, Trash2, AlertTriangle, CheckCircle, Clock, XCircle, RotateCcw, Undo2, Lock } from "lucide-react";
 import type { MediaItem } from "@shared/schema";
 
 interface MediaItemRowProps {
@@ -17,9 +17,11 @@ interface MediaItemRowProps {
   onSelect: (id: string, selected: boolean) => void;
   onEdit?: (item: MediaItem) => void;
   onDelete?: (id: string) => void;
+  onRescan?: (id: string) => void;
+  onUndo?: (id: string) => void;
 }
 
-export function MediaItemRow({ item, isSelected, onSelect, onEdit, onDelete }: MediaItemRowProps) {
+export function MediaItemRow({ item, isSelected, onSelect, onEdit, onDelete, onRescan, onUndo }: MediaItemRowProps) {
   const getTypeIcon = () => {
     switch (item.detectedType) {
       case "movie":
@@ -107,7 +109,7 @@ export function MediaItemRow({ item, isSelected, onSelect, onEdit, onDelete }: M
             </span>
             {item.year && <span className="text-muted-foreground">({item.year})</span>}
             {getSeasonEpisode() && (
-              <Badge variant="outline" size="sm">{getSeasonEpisode()}</Badge>
+              <Badge variant="outline" className="text-xs">{getSeasonEpisode()}</Badge>
             )}
             {getEpisodeTitle() && (
               <span className="text-muted-foreground text-xs">- {getEpisodeTitle()}</span>
@@ -152,6 +154,16 @@ export function MediaItemRow({ item, isSelected, onSelect, onEdit, onDelete }: M
             <DropdownMenuItem onClick={() => onEdit?.(item)} data-testid={`button-edit-${item.id}`}>
               <Edit className="h-4 w-4 mr-2" />
               Edit
+            </DropdownMenuItem>
+            {item.status === "organized" && (
+              <DropdownMenuItem onClick={() => onUndo?.(item.id)} data-testid={`button-undo-${item.id}`}>
+                <Undo2 className="h-4 w-4 mr-2" />
+                Undo Organize
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={() => onRescan?.(item.id)} data-testid={`button-rescan-${item.id}`}>
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Mark for Rescan
             </DropdownMenuItem>
             <DropdownMenuItem 
               onClick={() => onDelete?.(item.id)} 

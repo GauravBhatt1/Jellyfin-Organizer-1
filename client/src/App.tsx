@@ -14,6 +14,7 @@ import Organizer from "@/pages/organizer";
 import Duplicates from "@/pages/duplicates";
 import TvShows from "@/pages/tv-shows";
 import MoviesPage from "@/pages/movies-page";
+import History from "@/pages/history";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
@@ -26,6 +27,7 @@ function Router() {
       <Route path="/duplicates" component={Duplicates} />
       <Route path="/tv-shows" component={TvShows} />
       <Route path="/movies" component={MoviesPage} />
+      <Route path="/history" component={History} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

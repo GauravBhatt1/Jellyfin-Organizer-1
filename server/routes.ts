@@ -29,11 +29,11 @@ const clients = new Set<WebSocket>();
 
 function broadcast(message: WSMessage): void {
   const data = JSON.stringify(message);
-  for (const client of clients) {
+  clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(data);
     }
-  }
+  });
 }
 
 export async function registerRoutes(
@@ -79,7 +79,35 @@ export async function registerRoutes(
 
   app.post("/api/settings", async (req: Request, res: Response) => {
     try {
-      const settings = await storage.upsertSettings(req.body);
+      // Validate with partial schema (all fields optional for updates)
+      const parsed = insertSettingsSchema.partial().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid settings data", details: parsed.error });
+      }
+      
+      // Sync legacy fields with array fields for backward compatibility
+      const data = { ...parsed.data };
+      
+      // Sync moviesDestinations array with legacy field
+      if (data.moviesDestinations !== undefined) {
+        if (data.moviesDestinations && data.moviesDestinations.length > 0) {
+          data.moviesDestination = data.moviesDestinations[0];
+        } else {
+          // Empty array means clear destination
+          data.moviesDestination = null;
+        }
+      }
+      // Sync tvShowsDestinations array with legacy field
+      if (data.tvShowsDestinations !== undefined) {
+        if (data.tvShowsDestinations && data.tvShowsDestinations.length > 0) {
+          data.tvShowsDestination = data.tvShowsDestinations[0];
+        } else {
+          // Empty array means clear destination
+          data.tvShowsDestination = null;
+        }
+      }
+      
+      const settings = await storage.upsertSettings(data);
       res.json(settings);
     } catch (error) {
       console.error("Error updating settings:", error);
@@ -262,6 +290,98 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error running parser tests:", error);
       res.status(500).json({ error: "Failed to run parser tests" });
+    }
+  });
+
+  // Organization logs endpoint
+  app.get("/api/organization-logs", async (req: Request, res: Response) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const logs = await storage.getOrganizationLogs(limit);
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching organization logs:", error);
+      res.status(500).json({ error: "Failed to fetch organization logs" });
+    }
+  });
+
+  // Rescan single item endpoint
+  app.post("/api/media-items/:id/rescan", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const item = await storage.getMediaItemById(id);
+      if (!item) {
+        return res.status(404).json({ error: "Media item not found" });
+      }
+      
+      // Reset the item to pending state for next scan
+      const updated = await storage.updateMediaItem(id, {
+        status: "pending",
+        manualOverride: false,
+        tmdbId: null,
+        tmdbName: null,
+        posterPath: null,
+        duplicateOf: null,
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error marking item for rescan:", error);
+      res.status(500).json({ error: "Failed to mark item for rescan" });
+    }
+  });
+
+  // Undo/rollback organized file
+  app.post("/api/media-items/:id/undo", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const item = await storage.getMediaItemById(id);
+      if (!item) {
+        return res.status(404).json({ error: "Media item not found" });
+      }
+      
+      if (item.status !== "organized" || !item.destinationPath) {
+        return res.status(400).json({ error: "Item is not organized or has no destination path" });
+      }
+      
+      const originalPath = path.join(item.originalPath, item.originalFilename);
+      
+      // Check if destination file exists
+      if (!fs.existsSync(item.destinationPath)) {
+        return res.status(400).json({ error: "Destination file no longer exists" });
+      }
+      
+      // Create original directory if needed
+      await fs.promises.mkdir(item.originalPath, { recursive: true });
+      
+      // Move file back
+      try {
+        await fs.promises.rename(item.destinationPath, originalPath);
+      } catch {
+        // Cross-device move
+        await fs.promises.copyFile(item.destinationPath, originalPath);
+        await fs.promises.unlink(item.destinationPath);
+      }
+      
+      // Update item status back to pending
+      const updated = await storage.updateMediaItem(id, {
+        status: "pending",
+        destinationPath: null,
+      });
+      
+      // Log the undo action (use "move" since we're moving file back)
+      await storage.createOrganizationLog({
+        mediaItemId: id,
+        action: "move",
+        sourcePath: item.destinationPath,
+        destinationPath: originalPath,
+        error: "Undo operation - file moved back to original location",
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error undoing organize:", error);
+      res.status(500).json({ error: "Failed to undo organize" });
     }
   });
 

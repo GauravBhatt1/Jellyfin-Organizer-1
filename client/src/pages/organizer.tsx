@@ -87,6 +87,33 @@ export default function Organizer() {
     },
   });
 
+  const rescanMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("POST", `/api/media-items/${id}/rescan`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/media-items"] });
+      toast({ title: "Marked for rescan", description: "Item will be rescanned on next scan." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to mark item for rescan.", variant: "destructive" });
+    },
+  });
+
+  const undoMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("POST", `/api/media-items/${id}/undo`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/media-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      toast({ title: "Undo successful", description: "File has been moved back to original location." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Undo failed", description: error.message || "Failed to undo organize.", variant: "destructive" });
+    },
+  });
+
   useEffect(() => {
     if (!lastMessage) return;
 
@@ -266,6 +293,8 @@ export default function Organizer() {
                       onSelect={handleSelectItem}
                       onEdit={setEditItem}
                       onDelete={(id) => deleteMutation.mutate(id)}
+                      onRescan={(id) => rescanMutation.mutate(id)}
+                      onUndo={(id) => undoMutation.mutate(id)}
                     />
                   ))}
                 </tbody>
