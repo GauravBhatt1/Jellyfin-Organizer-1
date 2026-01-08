@@ -4,7 +4,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: docker/Dockerfile
+      dockerfile: Dockerfile
     ports:
       - "5000:5000"
     environment:
@@ -12,10 +12,10 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:-change-this-secret-key}
       - NODE_ENV=production
     volumes:
-      # Mount your media drives here - configure paths in GUI Settings
       - /mnt:/mnt
       - /media:/media
       - /home:/home
+      - /data:/data
     depends_on:
       db:
         condition: service_healthy
