@@ -406,8 +406,32 @@ async function scanDirectory(
               const fileStats = await fs.promises.stat(fullPath);
               const existingItem = await storage.getMediaItemByPath(dir, entry.name);
               
-              // Skip if already exists with same size
+              // Check if existing item needs status update (pending but already in destination)
               if (existingItem && existingItem.fileSize === fileStats.size) {
+                // Even if file unchanged, check if pending item is already organized
+                if (existingItem.status === "pending" && !existingItem.manualOverride) {
+                  const mediaName = existingItem.tmdbName || existingItem.cleanedName || existingItem.detectedName || "Unknown";
+                  const organizedCheck = isAlreadyOrganized({
+                    originalFullPath: fullPath,
+                    detectedType: existingItem.detectedType,
+                    name: mediaName,
+                    year: existingItem.year,
+                    season: existingItem.season,
+                    episode: existingItem.episode,
+                    episodeEnd: existingItem.episodeEnd,
+                    extension: ext,
+                    settings: destSettings,
+                  });
+                  
+                  if (organizedCheck.organized) {
+                    await storage.updateMediaItem(existingItem.id, {
+                      status: "organized",
+                      destinationPath: organizedCheck.resolvedDestPath || fullPath,
+                      confidence: Math.max(existingItem.confidence || 0, 80),
+                    });
+                    alreadyOrganizedCount++;
+                  }
+                }
                 processedFiles++;
               } else {
                 // Parse filename with new parser
